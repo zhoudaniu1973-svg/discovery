@@ -1,19 +1,32 @@
-# Android build
+# OS / IDE
+**/.idea/
+**/*.iml
+.DS_Store
+Thumbs.db
+
+# Gradle / Android
+**/.gradle/
+**/.tmp_gradle/
+**/build/
 /build/
 /app/build/
 *.apk
 *.aab
 *.ap_
-
-# IDE
-.idea/
-*.iml
-.gradle/
+**/local.properties
 local.properties
 
-# OS
-.DS_Store
-Thumbs.db
+# Node
+server/node_modules/
+npm-debug.log*
+yarn-debug.log*
+pnpm-debug.log*
+
+# Playwright / snapshots
+server/.state.json
+shared/testdata/last_discovery.html
+shared/testdata/login_fail.png
+shared/testdata/login_fail.html
 
 # Logs
 *.log
