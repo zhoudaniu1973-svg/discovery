@@ -193,10 +193,12 @@ class LoginActivity : AppCompatActivity() {
         if (cookie.isNullOrBlank()) return
         if (isVerifying) {
             pendingNativeUrl = targetUrl
+            hideWebViewForAutoJump()
             return
         }
         isVerifying = true
         pendingNativeUrl = targetUrl
+        hideWebViewForAutoJump()
         CookieStore.save(this@LoginActivity, cookie)
         CoroutineScope(Dispatchers.IO).launch {
             val status = DiscuzClient.fetch(LIST_URL).status
@@ -232,6 +234,13 @@ class LoginActivity : AppCompatActivity() {
         val intent = Intent(this@LoginActivity, MainActivity::class.java)
         intent.flags = Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_CLEAR_TASK
         startActivity(intent)
+    }
+
+    private fun hideWebViewForAutoJump() {
+        if (webView.visibility == View.GONE) return
+        webView.stopLoading()
+        webView.visibility = View.GONE
+        tvStatus.text = "Login: OK, opening..."
     }
 
     private fun extractQueryParamFromUrl(url: String, key: String): String? {

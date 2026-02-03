@@ -37,10 +37,11 @@ class PostListAdapter(
                         word-wrap: break-word;
                     }
                     img { 
-                        max-width: 100%%; 
-                        height: auto; 
+                        width: 100%% !important;
+                        max-width: 100%% !important;
+                        height: auto !important;
                         display: block;
-                        margin: 8px 0;
+                        margin: 10px 0;
                     }
                     a { color: #2F7DB8; }
                 </style>

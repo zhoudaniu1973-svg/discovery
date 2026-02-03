@@ -14,6 +14,7 @@ import androidx.swiperefreshlayout.widget.SwipeRefreshLayout
 import com.discovery.parser.model.ParseStatus
 import com.discovery.parser.network.CookieStore
 import com.discovery.ui.PostListAdapter
+import com.discovery.util.setupActionBarAutoHide
 import com.discovery.util.WebViewFetcher
 import com.discovery.viewmodel.DetailViewModel
 import com.facebook.shimmer.ShimmerFrameLayout
@@ -67,6 +68,7 @@ class DetailActivity : AppCompatActivity() {
             }
         )
         rvPosts.adapter = adapter
+        setupActionBarAutoHide(rvPosts)
 
         // 下拉刷新
         swipeRefresh.setOnRefreshListener {

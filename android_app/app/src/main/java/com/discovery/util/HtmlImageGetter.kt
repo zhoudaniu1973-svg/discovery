@@ -66,7 +66,9 @@ class HtmlImageGetter(
         val intrinsicWidth = drawable.intrinsicWidth.coerceAtLeast(1)
         val intrinsicHeight = drawable.intrinsicHeight.coerceAtLeast(1)
 
-        val targetWidth = min(maxWidth, intrinsicWidth)
+        val density = textView.resources.displayMetrics.density
+        val minUpscalePx = (80f * density).roundToInt().coerceAtLeast(1)
+        val targetWidth = if (intrinsicWidth >= minUpscalePx) maxWidth else min(maxWidth, intrinsicWidth)
         val scale = targetWidth.toFloat() / intrinsicWidth.toFloat()
         val targetHeight = (intrinsicHeight * scale).roundToInt().coerceAtLeast(1)
 
