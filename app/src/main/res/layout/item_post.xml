@@ -51,12 +51,15 @@
                     android:textSize="12sp" />
             </LinearLayout>
 
-            <!-- 帖子内容 WebView 用于显示图片 -->
-            <android.webkit.WebView
-                android:id="@+id/wvContent"
+            <!-- 帖子内容 TextView（HtmlCompat + ImageGetter） -->
+            <TextView
+                android:id="@+id/tvContent"
                 android:layout_width="match_parent"
                 android:layout_height="wrap_content"
-                android:layout_marginTop="6dp" />
+                android:layout_marginTop="6dp"
+                android:lineSpacingExtra="4dp"
+                android:textColor="#111111"
+                android:textSize="16sp" />
         </LinearLayout>
 
     </LinearLayout>

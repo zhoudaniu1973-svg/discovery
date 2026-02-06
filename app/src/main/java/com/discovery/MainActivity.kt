@@ -16,6 +16,7 @@ import com.discovery.parser.model.ParseStatus
 import com.discovery.parser.network.CookieStore
 import com.discovery.ui.ThreadListAdapter
 import com.discovery.util.setupActionBarAutoHide
+import com.discovery.util.setupPaging
 import com.discovery.util.WebViewFetcher
 import com.discovery.viewmodel.MainViewModel
 import com.facebook.shimmer.ShimmerFrameLayout
@@ -50,7 +51,7 @@ class MainActivity : AppCompatActivity() {
         // RecyclerView 配置
         val layoutManager = LinearLayoutManager(this)
         rvThreads.layoutManager = layoutManager
-        adapter = ThreadListAdapter(mutableListOf()) { item ->
+        adapter = ThreadListAdapter { item ->
             val intent = Intent(this, DetailActivity::class.java)
             intent.putExtra(DetailActivity.EXTRA_TID, item.tid)
             intent.putExtra(DetailActivity.EXTRA_TITLE, item.title)
@@ -66,17 +67,13 @@ class MainActivity : AppCompatActivity() {
         }
 
         // 上拉加载更多
-        rvThreads.addOnScrollListener(object : RecyclerView.OnScrollListener() {
-            override fun onScrolled(recyclerView: RecyclerView, dx: Int, dy: Int) {
-                if (dy <= 0) return
-                if (viewModel.isLoading.value == true) return
-                if (!viewModel.hasMore()) return
-                val lastVisible = layoutManager.findLastVisibleItemPosition()
-                if (lastVisible >= adapter.itemCount - 3) {
-                    viewModel.loadNextPage()
-                }
-            }
-        })
+        rvThreads.setupPaging(
+            layoutManager = layoutManager,
+            preloadThreshold = 3,
+            canLoadMore = { viewModel.hasMore() },
+            isLoading = { viewModel.isLoading.value == true },
+            onLoadMore = { viewModel.loadNextPage() }
+        )
 
         // 观察数据
         observeViewModel()

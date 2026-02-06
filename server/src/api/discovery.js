@@ -12,7 +12,15 @@ const SNAPSHOT_PATH = process.env.SNAPSHOT_PATH
     : path.resolve(process.cwd(), '..', 'shared', 'testdata', 'last_discovery.html');
 
 router.get('/discovery', async (req, res) => {
-    const page = req.query.page || 1;
+    const rawPage = req.query.page;
+    const parsedPage = Number.parseInt(rawPage, 10);
+    if (Number.isNaN(parsedPage) || parsedPage < 1 || parsedPage > 200) {
+        return res.status(400).json({
+            threads: [],
+            error: 'Invalid page parameter. Must be an integer between 1 and 200.'
+        });
+    }
+    const page = parsedPage || 1;
     // TODO: 鏍规嵁 page 鏋勫缓 URL锛屾殏鏃跺彧鎶撳彇 fid=2 鐨勯椤典綔涓烘紨绀?
     // 涔嬪悗鍙牴鎹?page 淇敼 URL 鍙傛暟锛屼緥濡?&page=2
     const targetUrl = `https://www.4d4y.com/forum/forumdisplay.php?fid=2&page=${page}`;
@@ -73,5 +81,6 @@ router.get('/discovery', async (req, res) => {
 });
 
 export default router;
+
 
 

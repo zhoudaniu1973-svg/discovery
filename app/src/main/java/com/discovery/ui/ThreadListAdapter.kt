@@ -4,14 +4,27 @@ import android.view.LayoutInflater
 import android.view.View
 import android.view.ViewGroup
 import android.widget.TextView
+import androidx.recyclerview.widget.DiffUtil
+import androidx.recyclerview.widget.ListAdapter
 import androidx.recyclerview.widget.RecyclerView
 import com.discovery.R
 import com.discovery.parser.model.ThreadListItem
 
 class ThreadListAdapter(
-    private val items: MutableList<ThreadListItem>,
     private val onItemClick: (ThreadListItem) -> Unit
-) : RecyclerView.Adapter<ThreadListAdapter.ViewHolder>() {
+) : ListAdapter<ThreadListItem, ThreadListAdapter.ViewHolder>(DiffCallback) {
+
+    companion object {
+        private val DiffCallback = object : DiffUtil.ItemCallback<ThreadListItem>() {
+            override fun areItemsTheSame(oldItem: ThreadListItem, newItem: ThreadListItem): Boolean {
+                return oldItem.tid == newItem.tid
+            }
+
+            override fun areContentsTheSame(oldItem: ThreadListItem, newItem: ThreadListItem): Boolean {
+                return oldItem == newItem
+            }
+        }
+    }
 
     class ViewHolder(itemView: View) : RecyclerView.ViewHolder(itemView) {
         val avatar: TextView = itemView.findViewById(R.id.tvAvatar)
@@ -27,7 +40,7 @@ class ThreadListAdapter(
     }
 
     override fun onBindViewHolder(holder: ViewHolder, position: Int) {
-        val item = items[position]
+        val item = getItem(position)
         val name = item.authorName.ifBlank { "?" }
         holder.avatar.text = name.firstOrNull()?.uppercaseChar()?.toString() ?: "?"
         holder.author.text = name
@@ -41,17 +54,7 @@ class ThreadListAdapter(
         }
     }
 
-    override fun getItemCount(): Int = items.size
-
     fun replaceAll(newItems: List<ThreadListItem>) {
-        items.clear()
-        items.addAll(newItems)
-        notifyDataSetChanged()
-    }
-
-    fun appendAll(newItems: List<ThreadListItem>) {
-        val start = items.size
-        items.addAll(newItems)
-        notifyItemRangeInserted(start, newItems.size)
+        submitList(newItems)
     }
 }

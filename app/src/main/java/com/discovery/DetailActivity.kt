@@ -15,6 +15,7 @@ import com.discovery.parser.model.ParseStatus
 import com.discovery.parser.network.CookieStore
 import com.discovery.ui.PostListAdapter
 import com.discovery.util.setupActionBarAutoHide
+import com.discovery.util.setupPaging
 import com.discovery.util.WebViewFetcher
 import com.discovery.viewmodel.DetailViewModel
 import com.facebook.shimmer.ShimmerFrameLayout
@@ -58,12 +59,12 @@ class DetailActivity : AppCompatActivity() {
         val layoutManager = LinearLayoutManager(this)
         rvPosts.layoutManager = layoutManager
         adapter = PostListAdapter(
-            mutableListOf(),
             onReplyClick = {
                 Toast.makeText(this, "暂不支持回复", Toast.LENGTH_SHORT).show()
             },
             onOnlyAuthorClick = {
                 val enabled = viewModel.toggleOnlyAuthor()
+                adapter.setOnlyAuthorEnabled(enabled)
                 Toast.makeText(this, if (enabled) "只看楼主" else "显示全部", Toast.LENGTH_SHORT).show()
             }
         )
@@ -76,17 +77,13 @@ class DetailActivity : AppCompatActivity() {
         }
 
         // 上拉加载更多
-        rvPosts.addOnScrollListener(object : RecyclerView.OnScrollListener() {
-            override fun onScrolled(recyclerView: RecyclerView, dx: Int, dy: Int) {
-                if (dy <= 0) return
-                if (viewModel.isLoading.value == true) return
-                if (!viewModel.hasMore()) return
-                val lastVisible = layoutManager.findLastVisibleItemPosition()
-                if (lastVisible >= adapter.itemCount - 3) {
-                    viewModel.loadNextPage()
-                }
-            }
-        })
+        rvPosts.setupPaging(
+            layoutManager = layoutManager,
+            preloadThreshold = 3,
+            canLoadMore = { viewModel.hasMore() },
+            isLoading = { viewModel.isLoading.value == true },
+            onLoadMore = { viewModel.loadNextPage() }
+        )
 
         // 观察数据
         observeViewModel()

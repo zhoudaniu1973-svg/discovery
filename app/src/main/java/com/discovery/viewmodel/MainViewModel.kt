@@ -12,7 +12,7 @@ import com.discovery.parser.model.ParseStatus
 import com.discovery.parser.model.ThreadListItem
 import com.discovery.parser.network.DiscuzClient
 import com.discovery.parser.service.ForumParser
-import com.discovery.util.WebViewFetcher
+import com.discovery.util.PageCache
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
@@ -77,38 +77,11 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         _error.value = null
 
         viewModelScope.launch {
-            val result = withContext(Dispatchers.IO) {
-                DiscuzClient.fetch(url)
-            }
-
-            when (result.status) {
-                ParseStatus.SUCCESS -> {
-                    val parseResult = parser.parseForumDisplay(result.data!!)
-                    if (parseResult.status == ParseStatus.SUCCESS) {
-                        val data = parseResult.data!!
-                        if (append) {
-                            allThreads.addAll(data.threads)
-                        } else {
-                            allThreads.clear()
-                            allThreads.addAll(data.threads)
-                        }
-                        _threads.value = allThreads.toList()
-                        currentPage = data.currentPage
-                        forumMaxPage = data.forumMaxPage
-                        nextPageUrl = data.nextPageUrl
-                    } else {
-                        _error.value = "Parse Error: ${parseResult.errorMessage}"
-                    }
-                }
-                ParseStatus.NEED_LOGIN -> {
-                    _authRequired.value = ParseStatus.NEED_LOGIN
-                }
-                ParseStatus.CF_CHALLENGE -> {
-                    _needWebViewFetch.value = url
-                }
-                else -> {
-                    _error.value = "Status: ${result.status}"
-                }
+            when (val loadResult = withContext(Dispatchers.IO) { loadForumDisplay(url) }) {
+                is LoadResult.Success -> applyForumDisplay(loadResult.data, append)
+                is LoadResult.NeedLogin -> _authRequired.value = ParseStatus.NEED_LOGIN
+                is LoadResult.NeedWebViewFetch -> _needWebViewFetch.value = loadResult.url
+                is LoadResult.Error -> _error.value = loadResult.message
             }
 
             _isLoading.value = false
@@ -119,18 +92,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
     fun handleWebViewResult(html: String, append: Boolean) {
         val parseResult = parser.parseForumDisplay(html)
         if (parseResult.status == ParseStatus.SUCCESS) {
-            val data = parseResult.data!!
-            if (append) {
-                allThreads.addAll(data.threads)
-            } else {
-                allThreads.clear()
-                allThreads.addAll(data.threads)
-            }
-            _threads.value = allThreads.toList()
-            currentPage = data.currentPage
-            forumMaxPage = data.forumMaxPage
-            nextPageUrl = data.nextPageUrl
-            _error.value = null
+            applyForumDisplay(parseResult.data!!, append)
         } else {
             _error.value = "Parse Error: ${parseResult.errorMessage}"
         }
@@ -145,6 +107,41 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
 
     fun clearAuthRequired() {
         _authRequired.value = null
+    }
+
+    private fun loadForumDisplay(url: String): LoadResult<ForumDisplayResult> {
+        PageCache.getForumDisplay(url)?.let { cached ->
+            return LoadResult.Success(cached)
+        }
+        val result = DiscuzClient.fetch(url)
+        return when (result.status) {
+            ParseStatus.SUCCESS -> {
+                val parseResult = parser.parseForumDisplay(result.data!!)
+                if (parseResult.status == ParseStatus.SUCCESS) {
+                    PageCache.putForumDisplay(url, parseResult.data!!)
+                    LoadResult.Success(parseResult.data!!)
+                } else {
+                    LoadResult.Error("Parse Error: ${parseResult.errorMessage}", parseResult.status)
+                }
+            }
+            ParseStatus.NEED_LOGIN -> LoadResult.NeedLogin
+            ParseStatus.CF_CHALLENGE -> LoadResult.NeedWebViewFetch(url)
+            else -> LoadResult.Error("Status: ${result.status}", result.status)
+        }
+    }
+
+    private fun applyForumDisplay(data: ForumDisplayResult, append: Boolean) {
+        if (append) {
+            allThreads.addAll(data.threads)
+        } else {
+            allThreads.clear()
+            allThreads.addAll(data.threads)
+        }
+        _threads.value = allThreads.toList()
+        currentPage = data.currentPage
+        forumMaxPage = data.forumMaxPage
+        nextPageUrl = data.nextPageUrl
+        _error.value = null
     }
 
     private fun resolveUrl(href: String): String {

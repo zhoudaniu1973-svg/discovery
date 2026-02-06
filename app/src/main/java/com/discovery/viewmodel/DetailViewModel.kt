@@ -8,8 +8,10 @@ import androidx.lifecycle.viewModelScope
 import com.discovery.Constants
 import com.discovery.parser.model.ParseStatus
 import com.discovery.parser.model.PostItem
+import com.discovery.parser.model.ViewThreadResult
 import com.discovery.parser.network.DiscuzClient
 import com.discovery.parser.service.ForumParser
+import com.discovery.util.PageCache
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
@@ -81,42 +83,11 @@ class DetailViewModel(application: Application) : AndroidViewModel(application) 
 
         viewModelScope.launch {
             val url = Constants.buildViewThreadUrl(tid, page)
-            val result = withContext(Dispatchers.IO) {
-                DiscuzClient.fetch(url)
-            }
-
-            when (result.status) {
-                ParseStatus.SUCCESS -> {
-                    val parseResult = parser.parseViewThread(result.data!!)
-                    if (parseResult.status == ParseStatus.SUCCESS) {
-                        val data = parseResult.data!!
-                        currentPage = data.currentPage
-                        maxPage = maxOf(maxPage, data.maxPage, currentPage)
-                        
-                        if (threadAuthor.isNullOrBlank()) {
-                            threadAuthor = data.posts.firstOrNull { it.authorName.isNotBlank() }?.authorName
-                        }
-                        
-                        if (append) {
-                            allPosts.addAll(data.posts)
-                        } else {
-                            allPosts.clear()
-                            allPosts.addAll(data.posts)
-                        }
-                        _posts.value = filterPosts(allPosts)
-                    } else {
-                        _error.value = "Parse Error: ${parseResult.errorMessage}"
-                    }
-                }
-                ParseStatus.NEED_LOGIN -> {
-                    _authRequired.value = ParseStatus.NEED_LOGIN
-                }
-                ParseStatus.CF_CHALLENGE -> {
-                    _needWebViewFetch.value = url
-                }
-                else -> {
-                    _error.value = "Status: ${result.status}"
-                }
+            when (val loadResult = withContext(Dispatchers.IO) { loadViewThread(url) }) {
+                is LoadResult.Success -> applyViewThread(loadResult.data, append)
+                is LoadResult.NeedLogin -> _authRequired.value = ParseStatus.NEED_LOGIN
+                is LoadResult.NeedWebViewFetch -> _needWebViewFetch.value = loadResult.url
+                is LoadResult.Error -> _error.value = loadResult.message
             }
 
             _isLoading.value = false
@@ -127,22 +98,7 @@ class DetailViewModel(application: Application) : AndroidViewModel(application) 
     fun handleWebViewResult(html: String, append: Boolean) {
         val parseResult = parser.parseViewThread(html)
         if (parseResult.status == ParseStatus.SUCCESS) {
-            val data = parseResult.data!!
-            currentPage = data.currentPage
-            maxPage = maxOf(maxPage, data.maxPage, currentPage)
-            
-            if (threadAuthor.isNullOrBlank()) {
-                threadAuthor = data.posts.firstOrNull { it.authorName.isNotBlank() }?.authorName
-            }
-            
-            if (append) {
-                allPosts.addAll(data.posts)
-            } else {
-                allPosts.clear()
-                allPosts.addAll(data.posts)
-            }
-            _posts.value = filterPosts(allPosts)
-            _error.value = null
+            applyViewThread(parseResult.data!!, append)
         } else {
             _error.value = "Parse Error: ${parseResult.errorMessage}"
         }
@@ -171,5 +127,44 @@ class DetailViewModel(application: Application) : AndroidViewModel(application) 
 
     fun clearAuthRequired() {
         _authRequired.value = null
+    }
+
+    private fun loadViewThread(url: String): LoadResult<ViewThreadResult> {
+        PageCache.getViewThread(url)?.let { cached ->
+            return LoadResult.Success(cached)
+        }
+        val result = DiscuzClient.fetch(url)
+        return when (result.status) {
+            ParseStatus.SUCCESS -> {
+                val parseResult = parser.parseViewThread(result.data!!)
+                if (parseResult.status == ParseStatus.SUCCESS) {
+                    PageCache.putViewThread(url, parseResult.data!!)
+                    LoadResult.Success(parseResult.data!!)
+                } else {
+                    LoadResult.Error("Parse Error: ${parseResult.errorMessage}", parseResult.status)
+                }
+            }
+            ParseStatus.NEED_LOGIN -> LoadResult.NeedLogin
+            ParseStatus.CF_CHALLENGE -> LoadResult.NeedWebViewFetch(url)
+            else -> LoadResult.Error("Status: ${result.status}", result.status)
+        }
+    }
+
+    private fun applyViewThread(data: ViewThreadResult, append: Boolean) {
+        currentPage = data.currentPage
+        maxPage = maxOf(maxPage, data.maxPage, currentPage)
+
+        if (threadAuthor.isNullOrBlank()) {
+            threadAuthor = data.posts.firstOrNull { it.authorName.isNotBlank() }?.authorName
+        }
+
+        if (append) {
+            allPosts.addAll(data.posts)
+        } else {
+            allPosts.clear()
+            allPosts.addAll(data.posts)
+        }
+        _posts.value = filterPosts(allPosts)
+        _error.value = null
     }
 }
