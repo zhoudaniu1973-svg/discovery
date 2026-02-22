@@ -52,4 +52,9 @@ dependencies {
     implementation 'org.jsoup:jsoup:1.17.2'
     implementation("org.jetbrains.kotlinx:kotlinx-coroutines-android:1.7.3")
     implementation("io.coil-kt:coil:2.6.0")
+
+    // 单元测试（JVM 层，无需模拟器）
+    testImplementation 'junit:junit:4.13.2'
+    testImplementation "org.jetbrains.kotlin:kotlin-test:1.9.20"
+    testImplementation 'org.jsoup:jsoup:1.17.2'
 }

@@ -3,15 +3,30 @@ package com.discovery.util
 import android.content.Context
 import android.graphics.drawable.Drawable
 import android.text.Html
+import android.util.TypedValue
 import android.widget.TextView
 import androidx.core.content.ContextCompat
 import coil.imageLoader
 import coil.request.ImageRequest
+import com.discovery.R
+import java.lang.ref.WeakReference
 
 class HtmlImageGetter(
-    private val textView: TextView,
-    private val context: Context
+    textView: TextView,
+    private val contentId: String
 ) : Html.ImageGetter {
+
+    companion object {
+        private val INLINE_SYMBOL_KEYWORDS = listOf(
+            "smiley", "emot", "emoji", "smilies", "face",
+            "icon", "tag", "label", "stamp"
+        )
+        private const val EMOJI_SIZE_DP = 28
+        private const val INLINE_SYMBOL_MAX_SIZE_DP = 36
+    }
+
+    private val textViewRef = WeakReference(textView)
+    private val context: Context = textView.context
 
     override fun getDrawable(source: String?): Drawable {
         val url = source.orEmpty()
@@ -26,26 +41,47 @@ class HtmlImageGetter(
         }
 
         val urlDrawable = UrlDrawable(placeholder)
-        loadImageAsync(url, urlDrawable)
+        loadImageAsync(url, urlDrawable, hasInlineSymbolKeyword(url))
         return urlDrawable
     }
 
-    private fun loadImageAsync(url: String, target: UrlDrawable) {
+    private fun loadImageAsync(url: String, target: UrlDrawable, hasInlineSymbolKeyword: Boolean) {
         val request = ImageRequest.Builder(context)
             .data(url)
             .allowHardware(false)
             .target(
                 onSuccess = { drawable ->
-                    val availableWidth = textView.width - textView.paddingLeft - textView.paddingRight
-                    val intrinsicWidth = drawable.intrinsicWidth.takeIf { it > 0 } ?: availableWidth
-                    val intrinsicHeight = drawable.intrinsicHeight.takeIf { it > 0 } ?: availableWidth
-                    val scaledHeight = if (availableWidth > 0 && intrinsicWidth > 0) {
-                        (intrinsicHeight.toFloat() / intrinsicWidth.toFloat() * availableWidth).toInt()
-                    } else {
-                        intrinsicHeight
+                    val textView = textViewRef.get() ?: return@target
+                    val currentContentId = textView.getTag(R.id.tag_html_content_id) as? String
+                    if (currentContentId != contentId) {
+                        return@target
                     }
 
-                    drawable.setBounds(0, 0, availableWidth.takeIf { it > 0 } ?: intrinsicWidth, scaledHeight)
+                    val availableWidth = textView.width - textView.paddingLeft - textView.paddingRight
+                    val intrinsicWidth = drawable.intrinsicWidth.takeIf { it > 0 } ?: 1
+                    val intrinsicHeight = drawable.intrinsicHeight.takeIf { it > 0 } ?: 1
+
+                    val isInlineSymbol = hasInlineSymbolKeyword || isSmallInlineAsset(intrinsicWidth, intrinsicHeight)
+                    if (isInlineSymbol) {
+                        val sizePx = dpToPx(EMOJI_SIZE_DP)
+                        val maxSizePx = dpToPx(INLINE_SYMBOL_MAX_SIZE_DP)
+                        val targetWidth = intrinsicWidth.coerceAtLeast(sizePx).coerceAtMost(maxSizePx)
+                        val targetHeight = (intrinsicHeight.toFloat() / intrinsicWidth.toFloat() * targetWidth)
+                            .toInt()
+                            .coerceAtLeast(1)
+                        drawable.setBounds(0, 0, targetWidth, targetHeight)
+                    } else {
+                        val targetWidth = if (availableWidth > 0) {
+                            availableWidth
+                        } else {
+                            intrinsicWidth
+                        }.coerceAtLeast(1)
+                        val targetHeight = (intrinsicHeight.toFloat() / intrinsicWidth.toFloat() * targetWidth)
+                            .toInt()
+                            .coerceAtLeast(1)
+                        drawable.setBounds(0, 0, targetWidth, targetHeight)
+                    }
+
                     target.setDrawable(drawable)
                     textView.text = textView.text
                     textView.invalidate()
@@ -54,6 +90,24 @@ class HtmlImageGetter(
             .build()
 
         context.imageLoader.enqueue(request)
+    }
+
+    private fun hasInlineSymbolKeyword(url: String): Boolean {
+        val lower = url.lowercase()
+        return INLINE_SYMBOL_KEYWORDS.any { lower.contains(it) }
+    }
+
+    private fun isSmallInlineAsset(width: Int, height: Int): Boolean {
+        val maxPx = dpToPx(INLINE_SYMBOL_MAX_SIZE_DP)
+        return width <= maxPx && height <= maxPx
+    }
+
+    private fun dpToPx(dp: Int): Int {
+        return TypedValue.applyDimension(
+            TypedValue.COMPLEX_UNIT_DIP,
+            dp.toFloat(),
+            context.resources.displayMetrics
+        ).toInt()
     }
 }
 

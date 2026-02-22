@@ -2,39 +2,41 @@
 
 import android.content.Intent
 import android.os.Bundle
+import android.view.Menu
+import android.view.MenuItem
 import android.view.View
-import android.view.ViewGroup
 import android.widget.TextView
 import android.widget.Toast
 import androidx.activity.OnBackPressedCallback
 import androidx.activity.viewModels
-import androidx.appcompat.app.AppCompatActivity
 import androidx.recyclerview.widget.LinearLayoutManager
 import androidx.recyclerview.widget.RecyclerView
 import androidx.swiperefreshlayout.widget.SwipeRefreshLayout
-import com.discovery.parser.model.ParseStatus
 import com.discovery.parser.network.CookieStore
 import com.discovery.ui.ThreadListAdapter
 import com.discovery.util.setupActionBarAutoHide
 import com.discovery.util.setupPaging
-import com.discovery.util.WebViewFetcher
 import com.discovery.viewmodel.MainViewModel
 import com.facebook.shimmer.ShimmerFrameLayout
 
 /**
- * 列表页 Activity (ViewModel 重构版)
+ * 论坛帖子列表页
+ *
+ * 继承 BaseForumActivity，通用的 WebView 回退、骨架屏、
+ * 鉴权跳转已在基类中处理，本类只关注列表展示和分页逻辑。
  */
-class MainActivity : AppCompatActivity() {
+class MainActivity : BaseForumActivity() {
 
     private val viewModel: MainViewModel by viewModels()
 
-    private lateinit var tvStatus: TextView
+    // 实现基类的抽象 View 属性
+    override lateinit var tvStatus: TextView
+    override lateinit var shimmerLayout: ShimmerFrameLayout
+    override lateinit var mainContentView: View  // 指向 RecyclerView
+
     private lateinit var adapter: ThreadListAdapter
     private lateinit var swipeRefresh: SwipeRefreshLayout
-    private lateinit var shimmerLayout: ShimmerFrameLayout
     private lateinit var rvThreads: RecyclerView
-
-    private var webViewFetcher: WebViewFetcher? = null
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
@@ -47,6 +49,7 @@ class MainActivity : AppCompatActivity() {
         swipeRefresh = findViewById(R.id.swipeRefresh)
         shimmerLayout = findViewById(R.id.shimmerLayout)
         rvThreads = findViewById(R.id.rvThreads)
+        mainContentView = rvThreads  // 基类通过 mainContentView 控制显示/隐藏
 
         // RecyclerView 配置
         val layoutManager = LinearLayoutManager(this)
@@ -63,7 +66,7 @@ class MainActivity : AppCompatActivity() {
 
         // 下拉刷新
         swipeRefresh.setOnRefreshListener {
-            viewModel.loadFirstPage()
+            viewModel.loadFirstPage(forceRefresh = true)
         }
 
         // 上拉加载更多
@@ -75,10 +78,7 @@ class MainActivity : AppCompatActivity() {
             onLoadMore = { viewModel.loadNextPage() }
         )
 
-        // 观察数据
         observeViewModel()
-
-        // 双击返回退出
         setupBackPressHandler()
 
         // 首次加载
@@ -88,88 +88,40 @@ class MainActivity : AppCompatActivity() {
         }
     }
 
+    // ---- ActionBar 菜单：收藏入口 ----
+
+    override fun onCreateOptionsMenu(menu: Menu): Boolean {
+        menuInflater.inflate(R.menu.menu_main, menu)
+        return true
+    }
+
+    override fun onOptionsItemSelected(item: MenuItem): Boolean {
+        return when (item.itemId) {
+            R.id.action_favorites -> {
+                startActivity(Intent(this, FavoritesActivity::class.java))
+                true
+            }
+            else -> super.onOptionsItemSelected(item)
+        }
+    }
+
     private fun observeViewModel() {
+        // 绑定基类通用 Observer（鉴权、WebView 回退、错误）
+        observeBaseViewModel(viewModel)
+
+        // 列表数据更新
         viewModel.threads.observe(this) { threads ->
             adapter.replaceAll(threads)
             hideShimmer()
         }
 
+        // 下拉刷新状态同步
         viewModel.isRefreshing.observe(this) { isRefreshing ->
             swipeRefresh.isRefreshing = isRefreshing
         }
-
-        viewModel.error.observe(this) { error ->
-            if (error != null) {
-                tvStatus.text = error
-                tvStatus.visibility = View.VISIBLE
-                hideShimmer()
-            } else {
-                tvStatus.visibility = View.GONE
-            }
-        }
-
-        viewModel.authRequired.observe(this) { status ->
-            if (status == ParseStatus.NEED_LOGIN) {
-                viewModel.clearAuthRequired()
-                val intent = Intent(this, LoginActivity::class.java)
-                intent.putExtra(LoginActivity.EXTRA_REASON, status.name)
-                intent.flags = Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_CLEAR_TASK
-                startActivity(intent)
-            }
-        }
-
-        viewModel.needWebViewFetch.observe(this) { url ->
-            if (url != null) {
-                fetchViaWebView(url)
-            }
-        }
     }
 
-    private fun fetchViaWebView(url: String) {
-        val container = findViewById<ViewGroup>(android.R.id.content)
-        val fetcher = webViewFetcher ?: WebViewFetcher(this, container).also {
-            webViewFetcher = it
-        }
-
-        fetcher.fetch(url, object : WebViewFetcher.Callback {
-            override fun onSuccess(html: String) {
-                viewModel.handleWebViewResult(html, append = false)
-            }
-
-            override fun onStatusDetected(status: ParseStatus) {
-                if (status == ParseStatus.NEED_LOGIN) {
-                    viewModel.clearWebViewRequest()
-                    val intent = Intent(this@MainActivity, LoginActivity::class.java)
-                    intent.putExtra(LoginActivity.EXTRA_REASON, status.name)
-                    intent.flags = Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_CLEAR_TASK
-                    startActivity(intent)
-                } else {
-                    tvStatus.text = "Status: $status"
-                    tvStatus.visibility = View.VISIBLE
-                    viewModel.clearWebViewRequest()
-                }
-            }
-
-            override fun onError(message: String) {
-                tvStatus.text = message
-                tvStatus.visibility = View.VISIBLE
-                viewModel.clearWebViewRequest()
-            }
-        })
-    }
-
-    private fun showShimmer() {
-        shimmerLayout.visibility = View.VISIBLE
-        shimmerLayout.startShimmer()
-        rvThreads.visibility = View.GONE
-    }
-
-    private fun hideShimmer() {
-        shimmerLayout.stopShimmer()
-        shimmerLayout.visibility = View.GONE
-        rvThreads.visibility = View.VISIBLE
-    }
-
+    /** 双击返回键退出应用 */
     private fun setupBackPressHandler() {
         var lastBackAt = 0L
         onBackPressedDispatcher.addCallback(this, object : OnBackPressedCallback(true) {
@@ -183,10 +135,5 @@ class MainActivity : AppCompatActivity() {
                 }
             }
         })
-    }
-
-    override fun onDestroy() {
-        super.onDestroy()
-        webViewFetcher?.destroy()
     }
 }

@@ -11,10 +11,10 @@ import android.widget.TextView
 import android.view.View
 import androidx.appcompat.app.AppCompatActivity
 import androidx.core.app.TaskStackBuilder
+import androidx.lifecycle.lifecycleScope
 import com.discovery.parser.network.CookieStore
 import com.discovery.parser.model.ParseStatus
 import okhttp3.HttpUrl.Companion.toHttpUrlOrNull
-import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
@@ -59,10 +59,8 @@ class LoginActivity : AppCompatActivity() {
         settings.userAgentString = Constants.DESKTOP_UA
 
         webView.webViewClient = object : WebViewClient() {
-            override fun shouldOverrideUrlLoading(view: WebView, url: String): Boolean {
-                return handleForumNavigation(view, url, cookieManager)
-            }
-
+            // 注意：只重写新版 API（WebResourceRequest），不重写已废弃的 String 版本，
+            // 避免在 API 24+ 上触发 Kotlin 编译警告
             override fun shouldOverrideUrlLoading(view: WebView, request: android.webkit.WebResourceRequest): Boolean {
                 return handleForumNavigation(view, request.url.toString(), cookieManager)
             }
@@ -200,7 +198,9 @@ class LoginActivity : AppCompatActivity() {
         pendingNativeUrl = targetUrl
         hideWebViewForAutoJump()
         CookieStore.save(this@LoginActivity, cookie)
-        CoroutineScope(Dispatchers.IO).launch {
+        // 使用 lifecycleScope 代替裸 CoroutineScope：
+        // Activity 销毁时协程自动取消，避免内存泄漏和操作已销毁视图的崩溃
+        lifecycleScope.launch(Dispatchers.IO) {
             val status = DiscuzClient.fetch(LIST_URL).status
             withContext(Dispatchers.Main) {
                 isVerifying = false
@@ -208,7 +208,7 @@ class LoginActivity : AppCompatActivity() {
                     openNativeForUrl(pendingNativeUrl ?: LIST_URL)
                     return@withContext
                 }
-                // Even if native is blocked by CF, go native and let WebView fallback fetch there.
+                // 即使被 CF 拦截也跳转原生，由 MainActivity 的 WebView 回退处理
                 openNativeForUrl(pendingNativeUrl ?: LIST_URL)
             }
         }
@@ -246,6 +246,13 @@ class LoginActivity : AppCompatActivity() {
     private fun extractQueryParamFromUrl(url: String, key: String): String? {
         val http = url.toHttpUrlOrNull() ?: return null
         return http.queryParameter(key)
+    }
+
+    override fun onDestroy() {
+        super.onDestroy()
+        // 主动销毁 WebView，防止其持有 Activity Context 导致内存泄漏
+        webView.stopLoading()
+        webView.destroy()
     }
 
     private fun mergeCookies(vararg cookies: String?): String? {

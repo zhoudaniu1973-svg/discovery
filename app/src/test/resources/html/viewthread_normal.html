@@ -1,0 +1,70 @@
+<!DOCTYPE html>
+<html>
+
+<head>
+    <meta http-equiv="Content-Type" content="text/html; charset=gbk" />
+    <title>4D4Y Topic</title>
+</head>
+
+<body>
+    <div class="pages">
+        <strong>1</strong>
+        <a class="last">3</a>
+        <a href="viewthread.php?tid=5001&amp;page=1">1</a>
+        <a href="viewthread.php?tid=5001&amp;page=2">2</a>
+        <a href="viewthread.php?tid=5001&amp;page=3">3</a>
+    </div>
+
+    <form id="postform" action="post.php?action=reply&amp;tid=5001">
+        <input type="hidden" name="formhash" value="abc123" />
+    </form>
+
+    <!-- 帖子一：楼主 -->
+    <table>
+        <tr id="post_100">
+            <td class="postauthor">
+                <div>
+                    <a href="space.php?uid=101" class="author">楼主网名</a>
+                </div>
+            </td>
+            <td class="t_msgfont" id="postmessage_100">
+                <div class="postinfo"><em>2026-01-01 10:00</em></div>
+                <p>这是楼主的帖子内容，欢迎大家讨论。</p>
+                <img src="attach/pic_001.jpg" zoomfile="attach/pic_001_large.jpg" />
+            </td>
+        </tr>
+    </table>
+
+    <!-- 帖子二：回复者，含相对路径图片 -->
+    <table>
+        <tr id="post_101">
+            <td class="postauthor">
+                <div>
+                    <a href="space.php?uid=202" class="author">回复者甲</a>
+                </div>
+            </td>
+            <td class="t_msgfont" id="postmessage_101">
+                <div class="postinfo"><em>2026-01-02 11:00</em></div>
+                <p>这是第一条回复，附带相对路径图片。</p>
+                <img src="forum/attachments/relative_image.png" />
+            </td>
+        </tr>
+    </table>
+
+    <!-- 帖子三：无图，纯文字 -->
+    <table>
+        <tr id="post_102">
+            <td class="postauthor">
+                <div>
+                    <a href="space.php?uid=303" class="author">第三位回复者</a>
+                </div>
+            </td>
+            <td class="t_msgfont" id="postmessage_102">
+                <div class="postinfo"><em>2026-01-03 09:30</em></div>
+                <p>这是纯文字回复，没有图片。</p>
+            </td>
+        </tr>
+    </table>
+</body>
+
+</html>

@@ -1,8 +1,6 @@
 package com.discovery.viewmodel
 
 import android.app.Application
-import android.view.ViewGroup
-import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.LiveData
 import androidx.lifecycle.MutableLiveData
 import androidx.lifecycle.viewModelScope
@@ -18,30 +16,19 @@ import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 
 /**
- * 列表页 ViewModel
+ * 论坛列表页 ViewModel
+ *
+ * 继承 BaseForumViewModel，仅保留与"线程列表"相关的业务逻辑：
+ * - 分页加载帖子列表
+ * - 缓存策略（命中缓存先展示，后台静默刷新）
+ * - 翻页状态维护
  */
-class MainViewModel(application: Application) : AndroidViewModel(application) {
+class MainViewModel(application: Application) : BaseForumViewModel(application) {
 
     private val parser = ForumParser()
 
-    // UI 状态
     private val _threads = MutableLiveData<List<ThreadListItem>>(emptyList())
     val threads: LiveData<List<ThreadListItem>> = _threads
-
-    private val _isLoading = MutableLiveData(false)
-    val isLoading: LiveData<Boolean> = _isLoading
-
-    private val _isRefreshing = MutableLiveData(false)
-    val isRefreshing: LiveData<Boolean> = _isRefreshing
-
-    private val _error = MutableLiveData<String?>(null)
-    val error: LiveData<String?> = _error
-
-    private val _authRequired = MutableLiveData<ParseStatus?>(null)
-    val authRequired: LiveData<ParseStatus?> = _authRequired
-
-    private val _needWebViewFetch = MutableLiveData<String?>(null)
-    val needWebViewFetch: LiveData<String?> = _needWebViewFetch
 
     // 分页状态
     var currentPage = 1
@@ -53,46 +40,81 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
 
     private val allThreads = mutableListOf<ThreadListItem>()
 
-    fun loadFirstPage() {
+    fun loadFirstPage(forceRefresh: Boolean = false) {
         if (_isLoading.value == true) return
         allThreads.clear()
         currentPage = 1
         forumMaxPage = 1
         nextPageUrl = null
         _isRefreshing.value = true
-        loadUrl(Constants.buildForumDisplayUrl(page = 1), append = false)
+        loadUrl(Constants.buildForumDisplayUrl(page = 1), append = false, forceRefresh = forceRefresh)
     }
 
     fun loadNextPage() {
         if (_isLoading.value == true) return
         if (!hasMore()) return
         val url = nextPageUrl?.let { resolveUrl(it) } ?: return
-        loadUrl(url, append = true)
+        loadUrl(url, append = true, forceRefresh = true)
     }
 
     fun hasMore(): Boolean = !nextPageUrl.isNullOrBlank() && currentPage < forumMaxPage
 
-    private fun loadUrl(url: String, append: Boolean) {
+    private fun loadUrl(url: String, append: Boolean, forceRefresh: Boolean = false) {
         _isLoading.value = true
         _error.value = null
 
         viewModelScope.launch {
-            when (val loadResult = withContext(Dispatchers.IO) { loadForumDisplay(url) }) {
-                is LoadResult.Success -> applyForumDisplay(loadResult.data, append)
-                is LoadResult.NeedLogin -> _authRequired.value = ParseStatus.NEED_LOGIN
-                is LoadResult.NeedWebViewFetch -> _needWebViewFetch.value = loadResult.url
-                is LoadResult.Error -> _error.value = loadResult.message
+            var servedCached = false
+            var cachedData: ForumDisplayResult? = null
+
+            // 非追加模式：先从缓存命中展示，再决定是否后台刷新
+            if (!append) {
+                val cachedEntry = PageCache.getForumDisplayEntry(url)
+                if (cachedEntry != null) {
+                    cachedData = cachedEntry.data
+                    applyForumDisplay(cachedEntry.data, append = false)
+                    servedCached = true
+                    if (!forceRefresh && !PageCache.isForumDisplayStale(cachedEntry)) {
+                        // 缓存新鲜，直接返回
+                        _isLoading.value = false
+                        _isRefreshing.value = false
+                        return@launch
+                    }
+                }
             }
 
+            // 后台拉取最新数据
+            when (val loadResult = withContext(Dispatchers.IO) { loadForumDisplayFresh(url) }) {
+                is LoadResult.Success -> {
+                    if (!servedCached || loadResult.data != cachedData) {
+                        applyForumDisplay(loadResult.data, append)
+                    }
+                }
+                is LoadResult.NeedLogin -> if (!servedCached) {
+                    _authRequired.value = ParseStatus.NEED_LOGIN
+                }
+                is LoadResult.NeedWebViewFetch -> if (!servedCached) {
+                    _needWebViewFetch.value = loadResult.url
+                }
+                is LoadResult.Error -> if (!servedCached) {
+                    _error.value = loadResult.message
+                }
+            }
             _isLoading.value = false
             _isRefreshing.value = false
         }
     }
 
-    fun handleWebViewResult(html: String, append: Boolean) {
+    /** WebView 回退抓取成功后，由 Activity 回调此方法解析并展示 */
+    override fun handleWebViewResult(html: String, append: Boolean) {
         val parseResult = parser.parseForumDisplay(html)
         if (parseResult.status == ParseStatus.SUCCESS) {
-            applyForumDisplay(parseResult.data!!, append)
+            val data = parseResult.data
+            if (data != null) {
+                applyForumDisplay(data, append)
+            } else {
+                _error.value = "Parse Error: Empty parse data"
+            }
         } else {
             _error.value = "Parse Error: ${parseResult.errorMessage}"
         }
@@ -101,25 +123,19 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         _needWebViewFetch.value = null
     }
 
-    fun clearWebViewRequest() {
-        _needWebViewFetch.value = null
-    }
-
-    fun clearAuthRequired() {
-        _authRequired.value = null
-    }
-
-    private fun loadForumDisplay(url: String): LoadResult<ForumDisplayResult> {
-        PageCache.getForumDisplay(url)?.let { cached ->
-            return LoadResult.Success(cached)
-        }
+    private fun loadForumDisplayFresh(url: String): LoadResult<ForumDisplayResult> {
         val result = DiscuzClient.fetch(url)
         return when (result.status) {
             ParseStatus.SUCCESS -> {
                 val parseResult = parser.parseForumDisplay(result.data!!)
                 if (parseResult.status == ParseStatus.SUCCESS) {
-                    PageCache.putForumDisplay(url, parseResult.data!!)
-                    LoadResult.Success(parseResult.data!!)
+                    val data = parseResult.data
+                    if (data != null) {
+                        PageCache.putForumDisplay(url, data)
+                        LoadResult.Success(data)
+                    } else {
+                        LoadResult.Error("Parse Error: Empty parse data", parseResult.status)
+                    }
                 } else {
                     LoadResult.Error("Parse Error: ${parseResult.errorMessage}", parseResult.status)
                 }
